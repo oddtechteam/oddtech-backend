@@ -1,5 +1,7 @@
 package com.complaint.backend.configurations;
 
+import java.util.Arrays;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -10,13 +12,14 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.complaint.backend.enums.UserRole;
 import com.complaint.backend.services.jwt.UserService;
@@ -30,58 +33,73 @@ import lombok.RequiredArgsConstructor;
 public class WebSecurityConfiguration {
 
     private final UserService userService;
-
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors() // Enable CORS .
-                .and()
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(request -> request
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
-                        .requestMatchers("/api/users/all").permitAll()
-                        .requestMatchers("/api/assets/**").permitAll()
-                        .requestMatchers("/api/assignments/**").permitAll()
-                        .requestMatchers("/api/note/**").hasAnyAuthority(UserRole.ADMIN.name(), UserRole.EMPLOYEE.name())
-                        .requestMatchers("/api/issues").hasAuthority(UserRole.EMPLOYEE.name())
-                        .requestMatchers("/api/issues/**").hasAuthority(UserRole.ADMIN.name())
-                        .requestMatchers("/api/employee/**").hasAuthority(UserRole.EMPLOYEE.name())
-                        .requestMatchers("/api/post/**").hasAnyAuthority(UserRole.ADMIN.name(),UserRole.EMPLOYEE.name())
-                        .requestMatchers("/uploads/**").permitAll()
-                        .requestMatchers("/api/postcomment/**").hasAnyAuthority(UserRole.ADMIN.name(),UserRole.EMPLOYEE.name())
-                        .requestMatchers("/api/employee/translate").hasAuthority(UserRole.EMPLOYEE.name())
-                        .requestMatchers("/api/assignments/(\\d+)/return").hasAnyRole("ADMIN")
-                        .requestMatchers("/api/visitors").permitAll()
-                        .requestMatchers("/api/visitors/(\\d+)/approve").hasAuthority(UserRole.ADMIN.name())
-                        .requestMatchers("/api/visitors/(\\d+)/exit").hasAuthority(UserRole.ADMIN.name())
-                        .requestMatchers("/api/visitors/**").hasAnyAuthority(UserRole.EMPLOYEE.name(), UserRole.ADMIN.name())
-                        .requestMatchers("/api/documents/**").permitAll()
-                        .requestMatchers("/api/attendance/records").permitAll()
-                        .requestMatchers("/api/attendance/check-in-out").permitAll()
-                        .anyRequest().authenticated()
-                )
-                .sessionManagement(manager -> manager.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .csrf(csrf -> csrf.disable())
+            .cors(cors -> {}) // use CorsConfigurationSource bean below
+            .authorizeHttpRequests(request -> request
+                // ✅ public health/info for Railway
+                .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+
+                // (keep the rest of your rules)
+                .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
+                .requestMatchers("/api/users/all").permitAll()
+                .requestMatchers("/api/assets/**").permitAll()
+                .requestMatchers("/api/assignments/**").permitAll()
+                .requestMatchers("/api/note/**").hasAnyAuthority(UserRole.ADMIN.name(), UserRole.EMPLOYEE.name())
+                .requestMatchers("/api/issues").hasAuthority(UserRole.EMPLOYEE.name())
+                .requestMatchers("/api/issues/**").hasAuthority(UserRole.ADMIN.name())
+                .requestMatchers("/api/employee/**").hasAuthority(UserRole.EMPLOYEE.name())
+                .requestMatchers("/api/post/**").hasAnyAuthority(UserRole.ADMIN.name(), UserRole.EMPLOYEE.name())
+                .requestMatchers("/uploads/**").permitAll()
+                .requestMatchers("/api/postcomment/**").hasAnyAuthority(UserRole.ADMIN.name(), UserRole.EMPLOYEE.name())
+                .requestMatchers("/api/employee/translate").hasAuthority(UserRole.EMPLOYEE.name())
+                // NOTE: ant patterns don’t support regex; if you intended digits, prefer "/api/assignments/*/return"
+                .requestMatchers("/api/assignments/*/return").hasRole("ADMIN")
+                .requestMatchers("/api/visitors").permitAll()
+                .requestMatchers("/api/visitors/*/approve").hasAuthority(UserRole.ADMIN.name())
+                .requestMatchers("/api/visitors/*/exit").hasAuthority(UserRole.ADMIN.name())
+                .requestMatchers("/api/visitors/**").hasAnyAuthority(UserRole.EMPLOYEE.name(), UserRole.ADMIN.name())
+                .requestMatchers("/api/documents/**").permitAll()
+                .requestMatchers("/api/attendance/records").permitAll()
+                .requestMatchers("/api/attendance/check-in-out").permitAll()
+                .anyRequest().authenticated()
+            )
+            .sessionManagement(m -> m.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authenticationProvider(authenticationProvider())
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-
+    // CORS driven by env var: CORS_ALLOWED_ORIGINS (comma-separated)
     @Bean
-    public PasswordEncoder passwordEncoder () {
-        return new BCryptPasswordEncoder();
+    public CorsConfigurationSource corsConfigurationSource() {
+        String origins = System.getenv().getOrDefault(
+            "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000"
+        );
+        CorsConfiguration cfg = new CorsConfiguration();
+        cfg.setAllowedOrigins(Arrays.asList(origins.split(",")));
+        cfg.setAllowedMethods(Arrays.asList("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        cfg.setAllowedHeaders(Arrays.asList("*"));
+        cfg.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", cfg);
+        return source;
     }
 
+    @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
+
     @Bean
-    public AuthenticationProvider authenticationProvider () {
+    public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userService. userDetailsService());
-        provider. setPasswordEncoder (passwordEncoder ());
+        provider.setUserDetailsService(userService.userDetailsService());
+        provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
 
@@ -90,4 +108,3 @@ public class WebSecurityConfiguration {
         return configuration.getAuthenticationManager();
     }
 }
-
