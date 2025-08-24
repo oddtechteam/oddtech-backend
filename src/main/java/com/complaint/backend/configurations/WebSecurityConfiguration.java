@@ -1,6 +1,7 @@
 package com.complaint.backend.configurations;
 
 import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,14 +40,20 @@ public class WebSecurityConfiguration {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> {}) // use CorsConfigurationSource bean below
-            .authorizeHttpRequests(request -> request
-                // ✅ public health/info for Railway
+            // enable CORS using the bean below
+            .cors(cors -> {})
+            .authorizeHttpRequests(auth -> auth
+                // Health for Railway
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-
-                // (keep the rest of your rules)
-                .requestMatchers("/api/auth/**").permitAll()
+                // Preflight must pass
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                // OAuth endpoints (if you use Google sign-in)
+                .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+
+                // Public auth endpoints
+                .requestMatchers("/api/auth/**").permitAll()
+
+                // Your rules (kept as-is; one tweak noted below)
                 .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/users/all").permitAll()
                 .requestMatchers("/api/assets/**").permitAll()
@@ -59,8 +66,8 @@ public class WebSecurityConfiguration {
                 .requestMatchers("/uploads/**").permitAll()
                 .requestMatchers("/api/postcomment/**").hasAnyAuthority(UserRole.ADMIN.name(), UserRole.EMPLOYEE.name())
                 .requestMatchers("/api/employee/translate").hasAuthority(UserRole.EMPLOYEE.name())
-                // NOTE: ant patterns don’t support regex; if you intended digits, prefer "/api/assignments/*/return"
-                .requestMatchers("/api/assignments/*/return").hasRole("ADMIN")
+                // Ant patterns don't support regex; keep authority style consistent:
+                .requestMatchers("/api/assignments/*/return").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/visitors").permitAll()
                 .requestMatchers("/api/visitors/*/approve").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/visitors/*/exit").hasAuthority(UserRole.ADMIN.name())
@@ -68,6 +75,7 @@ public class WebSecurityConfiguration {
                 .requestMatchers("/api/documents/**").permitAll()
                 .requestMatchers("/api/attendance/records").permitAll()
                 .requestMatchers("/api/attendance/check-in-out").permitAll()
+
                 .anyRequest().authenticated()
             )
             .sessionManagement(m -> m.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -77,17 +85,27 @@ public class WebSecurityConfiguration {
         return http.build();
     }
 
-    // CORS driven by env var: CORS_ALLOWED_ORIGINS (comma-separated)
+    // CORS driven by env var CORS_ALLOWED_ORIGINS (comma-separated)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        String origins = System.getenv().getOrDefault(
-            "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000"
+        String originsEnv = System.getenv().getOrDefault(
+            "CORS_ALLOWED_ORIGINS",
+            "http://localhost:5173,http://localhost:3000"
         );
+        var origins = Arrays.stream(originsEnv.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .collect(Collectors.toList());
+
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(Arrays.asList(origins.split(",")));
+        cfg.setAllowedOrigins(origins); // must be explicit with allowCredentials=true
         cfg.setAllowedMethods(Arrays.asList("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        cfg.setAllowedHeaders(Arrays.asList("*"));
+        cfg.setAllowedHeaders(Arrays.asList("*")); // or list specific headers
+        // If you want the browser to read certain response headers:
+        // cfg.setExposedHeaders(Arrays.asList("Location"));
         cfg.setAllowCredentials(true);
+        cfg.setMaxAge(3600L);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
         return source;
