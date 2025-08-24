@@ -86,30 +86,7 @@ public class WebSecurityConfiguration {
     }
 
     // CORS driven by env var CORS_ALLOWED_ORIGINS (comma-separated)
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        String originsEnv = System.getenv().getOrDefault(
-            "CORS_ALLOWED_ORIGINS",
-            "http://localhost:5173,http://localhost:3000"
-        );
-        var origins = Arrays.stream(originsEnv.split(","))
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .collect(Collectors.toList());
-
-        CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(origins); // must be explicit with allowCredentials=true
-        cfg.setAllowedMethods(Arrays.asList("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        cfg.setAllowedHeaders(Arrays.asList("*")); // or list specific headers
-        // If you want the browser to read certain response headers:
-        // cfg.setExposedHeaders(Arrays.asList("Location"));
-        cfg.setAllowCredentials(true);
-        cfg.setMaxAge(3600L);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", cfg);
-        return source;
-    }
+   
 
     @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 
