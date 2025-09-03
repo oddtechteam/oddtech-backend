@@ -2,7 +2,6 @@ package com.complaint.backend.configurations;
 
 import java.util.Arrays;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -36,19 +35,25 @@ public class WebSecurityConfiguration {
     private final UserService userService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    // ✅ inject from application.properties
-    @Value("${app.cors.allowed-origins}")
-    private String allowedOrigins;
-
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> {}) // ensures CorsConfigurationSource bean is applied
+            .cors(cors -> {}) // use CorsConfigurationSource bean below
             .authorizeHttpRequests(request -> request
-                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                // ✅ public health/info for Railway
+                .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+
+                // ✅ Auth & Attendance endpoints (frontend calls /auth/attendance)
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/auth/attendance").permitAll() // <-- added
+                .requestMatchers("/api/attendance/records").permitAll()
+                .requestMatchers("/api/attendance/check-in-out").permitAll()
+
+                // ✅ Preflight
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                // ✅ Other domain rules
                 .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/users/all").permitAll()
                 .requestMatchers("/api/assets/**").permitAll()
@@ -61,14 +66,14 @@ public class WebSecurityConfiguration {
                 .requestMatchers("/uploads/**").permitAll()
                 .requestMatchers("/api/postcomment/**").hasAnyAuthority(UserRole.ADMIN.name(), UserRole.EMPLOYEE.name())
                 .requestMatchers("/api/employee/translate").hasAuthority(UserRole.EMPLOYEE.name())
-                .requestMatchers("/api/assignments/*/return").hasAuthority(UserRole.ADMIN.name())
+                .requestMatchers("/api/assignments/*/return").hasRole("ADMIN")
                 .requestMatchers("/api/visitors").permitAll()
                 .requestMatchers("/api/visitors/*/approve").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/visitors/*/exit").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/visitors/**").hasAnyAuthority(UserRole.EMPLOYEE.name(), UserRole.ADMIN.name())
                 .requestMatchers("/api/documents/**").permitAll()
-                .requestMatchers("/api/attendance/records").permitAll()
-                .requestMatchers("/api/attendance/check-in-out").permitAll()
+
+                // ✅ All other requests must be authenticated
                 .anyRequest().authenticated()
             )
             .sessionManagement(m -> m.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -78,10 +83,15 @@ public class WebSecurityConfiguration {
         return http.build();
     }
 
+    // ✅ CORS driven by env var
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        String origins = System.getenv().getOrDefault(
+            "CORS_ALLOWED_ORIGINS", 
+            "https://oddtech-frontend-production.up.railway.app,http://localhost:5173,http://localhost:3000"
+        );
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+        cfg.setAllowedOrigins(Arrays.asList(origins.split(",")));
         cfg.setAllowedMethods(Arrays.asList("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(Arrays.asList("*"));
         cfg.setAllowCredentials(true);
@@ -90,7 +100,10 @@ public class WebSecurityConfiguration {
         return source;
     }
 
-    @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
+    @Bean 
+    public PasswordEncoder passwordEncoder() { 
+        return new BCryptPasswordEncoder(); 
+    }
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
