@@ -2,6 +2,7 @@ package com.complaint.backend.configurations;
 
 import java.util.Arrays;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -35,16 +36,17 @@ public class WebSecurityConfiguration {
     private final UserService userService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    // ✅ inject from application.properties
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> {}) // use CorsConfigurationSource bean below
+            .cors(cors -> {}) // ensures CorsConfigurationSource bean is applied
             .authorizeHttpRequests(request -> request
-                // ✅ public health/info for Railway
-                .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-
-                // (keep the rest of your rules)
+                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
@@ -59,8 +61,7 @@ public class WebSecurityConfiguration {
                 .requestMatchers("/uploads/**").permitAll()
                 .requestMatchers("/api/postcomment/**").hasAnyAuthority(UserRole.ADMIN.name(), UserRole.EMPLOYEE.name())
                 .requestMatchers("/api/employee/translate").hasAuthority(UserRole.EMPLOYEE.name())
-                // NOTE: ant patterns don’t support regex; if you intended digits, prefer "/api/assignments/*/return"
-                .requestMatchers("/api/assignments/*/return").hasRole("ADMIN")
+                .requestMatchers("/api/assignments/*/return").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/visitors").permitAll()
                 .requestMatchers("/api/visitors/*/approve").hasAuthority(UserRole.ADMIN.name())
                 .requestMatchers("/api/visitors/*/exit").hasAuthority(UserRole.ADMIN.name())
@@ -77,14 +78,10 @@ public class WebSecurityConfiguration {
         return http.build();
     }
 
-    // CORS driven by env var: CORS_ALLOWED_ORIGINS (comma-separated)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        String origins = System.getenv().getOrDefault(
-            "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000"
-        );
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(Arrays.asList(origins.split(",")));
+        cfg.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
         cfg.setAllowedMethods(Arrays.asList("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(Arrays.asList("*"));
         cfg.setAllowCredentials(true);
